@@ -1,0 +1,384 @@
+---
+title: "Gender Recognition by Voice"
+author: "by Gabriel Erichson"
+output: 
+  html_document:
+    df_print: paged
+    code_folding: hide
+    toc: true
+    toc_depth: 3
+    toc_float: 
+      collapsed: true
+    number_sections: true
+    theme: sandstone
+    highlight: haddock
+    css: style.css
+  pdf_document: default
+---
+
+Github: https://github.com/gabrielerichsonmrp/gehm_classification_01
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.align = "center",
+	message = FALSE,
+	warning = FALSE,
+	comment = "#>",
+	result = "hide"
+)
+
+options(scipen = 999999999)
+
+library(tidyverse)
+library(data.table)
+library(paletti)
+library(GGally)
+library(cmplot)
+library(plotly)
+library(brglm2)
+library(caret)
+library(class)
+
+```
+
+
+# Intro
+
+Menentukan jenis kelamin seseorang berdasarkan suara mereka merupakan hal yang mudah sebagian besar orang. Namun, **bagaimana jika sebuah mesin dapat mengetahui orang yang sedang berbicara adalah laki-laki atau perempuan?**
+
+
+Pada kesempatan kali ini, kita akan mencoba melakukan pemodelan statistik untuk mengidentifikasi jenis kelamin seseorang berdasarkan suaranya. Data yang digunakan menggunakan 3.168 sampel rekaman suara dan ucapan dari pria/wanita. Sampel suara pra-diproses menggunakan analisis akustik dalam R menggunakan paket seewave dan tuneR, dengan rentang frekuensi yang dianalisis dari 0 hz-280 hz [(rentang vokal manusia)](https://en.wikipedia.org/wiki/Voice_frequency#Fundamental_frequency). Untuk penjelasan mengenai analisis akustik yang dilakukan dan metode pemodelan lainnya, silahkan menggunjungi situs yang dipublish  [KORY BECKER](http://www.primaryobjects.com/2016/06/22/identifying-the-gender-of-a-voice-using-machine-learning/)
+
+
+
+
+
+
+# Read Data
+
+dateset yang digunakan dapat didownload dari [link ini](https://raw.githubusercontent.com/primaryobjects/voice-gender/master/voice.csv) dengan total 3168 obsevasi dan 21 variabel.
+
+```{r}
+voice <-  read.csv("data_input/voice.csv")
+setnames(voice, "label", "gender")
+dim(voice)
+```
+
+<br>
+
+# Data Inspection
+## 10 top line
+```{r}
+head(voice,10)
+```
+
+
+## 10 bottom line
+```{r}
+tail(voice,10)
+```
+
+
+## Variable Description
+
+Data ini dibuat menggunakan Analisis Akustik yang dimana variabel yang dihasilkan sebagai berikut:
+
+ Variabel     |        deksripsi
+--------------|---------------------------------------------------------------------------------------------------
+duration      | length of signal
+meanfreq      | mean frequency (in kHz)
+sd            | standard deviation of frequency
+median        | median frequency (in kHz)
+Q25           | first quantile (in kHz)
+Q75           | third quantile (in kHz)
+IQR           | interquantile range (in kHz)
+skew          | skewness (see note in specprop description)
+kurt          | kurtosis (see note in specprop description)
+sp.ent        | spectral entropy
+sfm           | spectral flatness
+mode          | mode frequency
+centroid      | frequency centroid (see specprop)
+peakf         | peak frequency (frequency with highest energy)
+meanfun       | average of fundamental frequency measured across acoustic signal
+minfun        | minimum fundamental frequency measured across acoustic signal
+maxfun        | maximum fundamental frequency measured across acoustic signal
+meandom       | average of dominant frequency measured across acoustic signal
+mindom        | minimum of dominant frequency measured across acoustic signal
+maxdom        | maximum of dominant frequency measured across acoustic signal
+dfrange       | range of dominant frequency measured across acoustic signal
+modindx       | modulation index. Calculated as the accumulated absolute difference between adjacent measurements of fundamental frequencies divided by the frequency range
+gender        | male or female (**Target Prediksi**)
+
+
+
+
+<br>
+
+# Data Pre-Processing
+## Data Structure
+Struktur data dibawah menunjukan bahwa tipe data yang dimiliki sudah sesuai dengan kebutuhan pemodelan.
+```{r}
+
+glimpse(voice)
+
+```
+
+
+## Missing Value?
+
+Dataset ini bersih dari missing value.
+```{r}
+colSums(is.na(voice))
+```
+
+
+## Duplicate Value
+
+Dari 3168 observasi terdapat 3166 observasi yang unik. Terdapat 2 duplikat value, tidak banyak tapi akan lebih baik jika semua data bersifat unik, sehingga data duplikat perlu dibuang.
+```{r}
+data.frame("jumlah.seluruh.data"=nrow(voice),
+           "jumlah.data.unik" = nrow(distinct(voice))
+           )
+# Seleksi data yang unik
+
+voice <- voice %>% distinct()
+```
+
+
+<br>
+
+
+# EDA 
+
+
+
+<br>
+
+# Split Train-Test
+
+Dari 3166 data observasi, saya membagi 80% sebagai data train dan 20% sebagai data test. Data train digunakan untuk melakukan pemodelan dan data test digunakan untuk menguji seberapa baik model yang dibuat jika dihadapkan dengan unseen data.
+```{r}
+set.seed(1000)
+idx <- sample(x=nrow(voice),size = nrow(voice)*0.8)
+voice_train <- voice[idx,]
+voice_test <- voice[-idx,]
+
+data.frame("jumlah.data.train"=nrow(voice_train),
+           "jumlah.data.test"=nrow(voice_test))
+
+```
+
+
+<br>
+# Cross Validation
+
+Target variabel yang akan diprediksi : **gender**. Jika dilihat proporsi data tidak selisih jauh, sehingga bisa langsung dilanjutkan ke proses pemodelan.
+```{r}
+prop.table(table(voice_train$gender))
+
+```
+
+
+***
+
+<br>
+
+
+# Modelling {.tabset .tabset-fade .tabset-pills}
+
+Output yang diharapkan dari projek kali ini yaitu menghasilkan model yang terbaik untuk mengidentifikasi jenis kelamin berdasarkan suara. Dalam proses pembuatan model kali ini, kita akan mencoba menggunakan metode Logistic Regression dan K-Nearest Neighbour, kemudian membandingkan metode mana yang lebih baik?
+
+
+## Logistic Regression
+
+**Postive Class of Target Variable**<br>
+Dalam melakukan pemodelan regresi logistik, salah satu hal penting yang perlu diketahui sebelum membuat model adalah positive class dari target yang akan kita prediksi. Hal ini bisa diketahui dari posisi paling terakhir di level variabel target. Berdasarkan dataset yang kita miliki, Positive Class dari variabel target yaitu **male**
+
+```{r}
+levels(voice$gender)
+```
+
+
+### Model Fitting
+Sama seperti regresi linear, feature selection atau pemilihan variabel prediktor untuk pemodelan regresi logistik bisa berdasarkan business wise atau dapat menggunakan pendekatan stepwise. Pada pemodelan ini, saya putuskan menggunakan pendekatan **step-wise : backward** karena saya kurang memahami jelas terkait analisis akustik.
+
+```{r}
+voice_glm <- glm(gender~.,data = voice_train, family = "binomial")
+
+model_backward <- step(
+  voice_glm,
+  direction = "backward"
+)
+```
+
+
+Berdasarkan proses Backward step-wise diatas, formula dengan nilai AIC paling kecil adalah formula yang paling optimal. Sehingga variabel yang digunakan untuk memprediksi **gender** berdasarkan suara pada pemodelan regresi logistik ini yaitu **Q25**, **Q75**, **kurt**, **sp.ent**, **sfm**, **meanfun**, **minfun** dan **modindx**
+
+```{r}
+# Fitted Model
+voice_glm_model <- glm(
+                        formula = gender ~ Q25 + Q75 + kurt + sp.ent + sfm +meanfun + minfun + modindx, 
+                        family = binomial("logit"),
+                        data = voice_train
+                       )
+
+summary(voice_glm_model)
+
+```
+
+Pada hasil summary model regresi logistik diatas, nilai pada kolom Estimate menunjukan koefiesiennya. Dari nilai koefisien ini bisa diketahui pengaruh dari variabel tersebut bersifat postif atau negatif terhadap positive class. Beirkut lebih jelasnya:
+
+```{r}
+data.frame("coef" = coef(voice_glm_model),
+           "Odds_ratio" = exp(coef(voice_glm_model)))
+```
+
+Data diatas merupakan nilai dari koefisien dan Odds Ratio dari setiap variabel yang kita gunakan sebagai prediktor pada model ini. Jika dilihat variabel yang memiliki pengaruh positif terhadap positive class yaitu **Q75**, **sp.ent** dan **minfun** dan variabel yang berpengaruh negatif terhdap positive class yaitu **Q25**, **kurt**, **sfm**, **meanfun** dan **modindx**. Hal yang unik disini, variabel yang berpengaruh positif memiliki andil yang sangat besar dalam menentukan gender. Misalnya, setiap kenaikan 1 satuan nilai Q75 maka peluang suara tersebut merupakan suara laki-laki sebesar 2696235877273962377442830000% . **Wow, seriusan nih?** mari kita coba lakukan prediksi terhadap data tes dan evauasi model ini.
+
+
+### Predict
+
+Berikut hasil prediksi menggunakan model `voice_glm_model` ke data test `voice_test` menggunakan threshold `0.5`. Variabel **gender** merupakan data test, **predict_probability** merupakan nilai peluang terhadap kelas positif dan **predict_gender** merupakan hasil prediksi gender.
+
+*hint*: Jika peluang > 0.5 maka **male**.
+
+```{r}
+voice_predict <- voice_test %>% 
+  mutate(
+    predict_probability = predict(object = voice_glm_model, newdata=voice_test, type = "response"),
+    predict_gender= case_when(
+                              predict_probability>0.5~"male",
+                              predict_probability<=0.5~"female"
+                            ),
+    predict_gender = factor(predict_gender,levels = c("female","male")),
+    
+  )
+
+
+voice_predict[,
+              c("gender","predict_probability","predict_gender",
+                "meanfreq","sd","median","Q25","Q75","IQR","skew","kurt", 
+                "sp.ent", "sfm", "mode", "centroid", "meanfun",
+                "minfun","maxfun", "meandom","mindom","maxdom","dfrange","modindx")
+              ]
+           
+```
+
+```{r}
+library(ggplot2)
+
+plot_predict <- gather(data=voice_predict, key=type, value=gender, gender, predict_gender, factor_key=T)
+
+plot_predict %>% 
+  group_by(type,gender) %>% 
+  summarise(freq=n()) %>% 
+  ggplot(aes(x=gender,y=freq,fill=type),group=type)+
+  geom_col(position = "dodge")+
+  geom_text(aes(label=freq, y=freq+5), vjust = -0.5, size=4, position = position_dodge(width = 0.9)) +
+  labs(
+    title = "Gender Proportion: Test VS Prediction",
+    x="Year",
+    y="Total of Project Campaign"
+  )+
+  theme_minimal()+
+  theme(
+      axis.title=element_text(size=9,face="bold"), 
+      axis.text.x=element_text(size=10,margin = margin(b=10)),
+      axis.text.y.left = element_text(margin = margin(l=10)),
+      legend.position = "right",
+      legend.margin=margin(t = 0,l=0,r=0, unit='pt')
+  ) +
+  scale_fill_manual(values = alpha(c("blue", "orange"), .6))
+
+
+```
+
+
+Jika dilihat dari porsi data antara gender di data test dan gender didata hasil prediksi hanya cenderung kecil, berarti secara proposi errornya kecil. Namun, meski begitu apakah tebakan tersebut sudah tepat? Mari kita evaluasi dahulu.
+
+
+
+### Model Evaluation
+
+Untuk mengevaluasi model regresi logistik dapat menggunakan **Confusion Matrix**. Berikut interpretasinya:
+
+```{r}
+caret::confusionMatrix(data = as.factor(voice_predict$predict_gender),
+                reference = as.factor(voice_predict$gender),
+                positive = "male")
+
+```
+<br>
+**Tentang Confussion Matrix:**<br>
+1. `Accuracy` : seberapa mampu model saya menebak dengan benar target Y.<br>
+2. `Re-call/Sensitivity` : dari semua data aktual yang positif, seberapa mampu proporsi model saya menebak benar.<br>
+3. `Specificity` : dari semua data aktual yang negatif, seberapa mampu proporsi model saya menebak yang benar.<br>
+4. `Precision/Pos Pred Value` : dari semua hasil prediksi, seberapa mampu model dapat menebak tepat kelas positif.
+<br>
+
+
+**Summary Logistic Regression**<br>
+Pada pemodelan ini, saya lebih mengutamakan nilai **Precision/Pos Pred Value** karena saya ingin model ini benar-benar tepat menebak jenis kelamin seseorang. Berdasarkan hasil evaluasi Confussion Matrix diatas, model yang sudah dibuat berhasil menebak tepat sebesar 0.9729 atau 97%. Bisa dilihat juga untuk nilai Accuracy sebesar 97%,  Sensitivity sebesar 98% dan Specificity sebesar 97%. Dengan kata lain, model ini sudah sangat baik untuk mengindentifikasi Gender berdasarkan suara.
+
+
+***
+
+<br>
+
+
+
+## K-Nearest Neighbour
+
+```{r}
+voice_train_x <- voice_train %>% select(-gender)
+voice_test_x <- voice_test %>% select(-gender)
+
+voice_train_y <- voice_train %>% select(gender)
+voice_test_y <- voice_test %>% select(gender)
+
+
+
+
+# scaling
+
+voice_train_x <- scale(voice_train_x)
+
+# scaling data test menggunakan informasi center dan scale dari data train
+
+voice_test_x <- scale(voice_test_x, 
+                     center = attr(voice_train_x, "scaled:center"),
+                     scale = attr(voice_train_x, "scaled:scale"))
+
+
+k_value <- sqrt(nrow(voice_train))
+
+knn_predict <-  class::knn(train = voice_train_knn,test = voice_test_knn, cl = voice_train_y$gender,k=51)
+
+confusionMatrix(data = as.factor(knn_predict), reference = as.factor(voice_test_y$gender), positive = "male")
+
+```
+
+
+
+
+
+
+***
+
+<br>
+
+# Summary
+
+
+***
+
+<br>
+
+# Refrence
+
+1. [Prediksi Pasien Penyakit Jantung](https://rpubs.com/inayatus/klasifikasi)
+2. [User Score Classification With Sentiment Analysis: Logistic Regression and K-NN](https://rpubs.com/Argaadya/529538)
+2. [Identifying the Gender of a Voice using Machine Learning](http://www.primaryobjects.com/2016/06/22/identifying-the-gender-of-a-voice-using-machine-learning/)
+3. [](https://en.wikipedia.org/wiki/Voice_frequency#Fundamental_frequency)
+
