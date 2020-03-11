@@ -35,7 +35,7 @@ p {
 .list-group-item.active, .list-group-item.active:hover, .list-group-item.active:focus {
     z-index: 2;
     color: #ffffff;
-    background-color: #003f5c;
+    background-color: #0380ca;
     border-color: #2f4b7c;
 }
 
@@ -99,6 +99,7 @@ h3 {
 
 h1.title {
     font-size: 1.8em;
+    color: #0380ca;
 }
 
 

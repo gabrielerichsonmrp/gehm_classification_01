@@ -1,0 +1,54 @@
+# 
+# # Logistic Regression
+# plot_predict_glm <- gather(data=voice_predict, key=type, value=gender, gender, predict_gender, factor_key=T)
+# 
+# plot_predict_glm %>% 
+#   group_by(type,gender) %>% 
+#   summarise(freq=n()) %>% 
+#   ggplot(aes(x=gender,y=freq,fill=type),group=type,color = type)+
+#   geom_col(position = "dodge")+
+#   geom_text(aes(label=freq, y=freq+5), vjust = -0.5, size=4, position = position_dodge(width = 0.9)) +
+#   labs(
+#     title = "Gender Proportion: Test VS Prediction using Logistic Regression",
+#     x="Gender",
+#     y="Total",
+#     fill = "Data"
+#   )+
+#   theme_minimal()+
+#   theme(
+#       axis.title=element_text(size=9,face="bold"), 
+#       axis.text.x=element_text(size=10,margin = margin(b=10)),
+#       axis.text.y.left = element_text(margin = margin(l=10)),
+#       legend.position = "right",
+#       legend.margin=margin(t = 0,l=0,r=0, unit='pt')
+#   ) +
+#   scale_fill_manual(labels = c("Data Test", "Data Predict"),
+#                     values = alpha(c("dodgerblue3", "goldenrod2"), .8))
+# 
+# 
+# 
+# ## KNN
+# plot_predict_knn <- gather(data=voice_predict_knn, key=type, value=gender, gender, predict_gender, factor_key=T)
+# 
+# plot_predict_knn %>% 
+#   group_by(type,gender) %>% 
+#   summarise(freq=n()) %>% 
+#   ggplot(aes(x=gender,y=freq,fill=type),group=type,color = type)+
+#   geom_col(position = "dodge")+
+#   geom_text(aes(label=freq, y=freq+5), vjust = -0.5, size=4, position = position_dodge(width = 0.9)) +
+#   labs(
+#     title = "Gender Proportion: Test VS Prediction using KNN",
+#     x="Gender",
+#     y="Total",
+#     fill = "Data"
+#   )+
+#   theme_minimal()+
+#   theme(
+#       axis.title=element_text(size=9,face="bold"), 
+#       axis.text.x=element_text(size=10,margin = margin(b=10)),
+#       axis.text.y.left = element_text(margin = margin(l=10)),
+#       legend.position = "right",
+#       legend.margin=margin(t = 0,l=0,r=0, unit='pt')
+#   ) +
+#   scale_fill_manual(labels = c("Data Test", "Data Predict"),
+#                     values = alpha(c("dodgerblue3", "darkorange1"), .8))
